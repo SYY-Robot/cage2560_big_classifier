@@ -1,192 +1,154 @@
 #include <Arduino.h>
-#include "Pixetto.h"
-#include "Servo.h"
-#include "Adafruit_NeoPixel.h"
+#include <SparkFun_TB6612.h>
+#include <Servo.h>
 
-#define rxPin 19
-#define txPin 18
+// Define pins for motor M+ M- & PWM
+Motor motor0 = Motor(33, 34, 5, 1, -1);   //A
+Motor motor1 = Motor(35, 36, 11, 1, -1);  //B
+Motor motor2 = Motor(37, 38, 12, 1, -1);  //C
+Motor motor3 = Motor(39, 40, 13, 1, -1);  //D
+int motor_speed = 150;
 
-Pixetto ss(rxPin, txPin);
-Servo Servo_1;
-Servo Servo_2;
-Servo Servo_3;
+// Define pins for servo
+unsigned int servo_pin = 2;
+int servo_angle = 90;
+int servo_catch_ball_angle = 10;
+Servo servo1;
 
-const unsigned short servo1_pin = 2;
-const unsigned short servo2_pin = 3;
-const unsigned short servo3_pin = 6;
+// Define pins for buttons
+unsigned int arm_x_1 = 3;
+unsigned int arm_x_2 = 6;
+unsigned int arm_y_1 = 7;
+unsigned int arm_y_2 = 45;
+unsigned int arm_z_1 = 46;
+unsigned int arm_z_2 = A3;
 
-const unsigned short red_angel = 20;
-const unsigned short blue_angel = 70;
-const unsigned short yellow_angel = 120;
-const unsigned short green_angel = 170;
+bool arm_x_1_state = HIGH;
+bool arm_x_2_state = HIGH;
+bool arm_y_1_state = HIGH;
+bool arm_y_2_state = HIGH;
+bool arm_z_1_state = HIGH;
+bool arm_z_2_state = HIGH;
 
-const unsigned short servo3_angel_max = 110;
-const unsigned short servo3_angel_min = 60;
+//Define pins for IR
+int IR_pin = A4;
 
-short color_id;
-short door_state = 1;//50 ->150
-bool run_finish = 1;
-long time, servo3_time;
-short servo3_angel;
+// flag
+bool have_ball = 0;
 
-
-
-//Adafruit_NeoPixel strip9 = Adafruit_NeoPixel(3, 9, NEO_GRB + NEO_KHZ800);
-//void colorled(int number, String c);
-
+// function
+void read_digitale_pin_state();
+void arm_init();
+void raise_arm();
 
 void setup() {
-  Serial.begin(9600);
-  ss.begin();
-  ss.enableFunc(Pixetto::FUNC_COLOR_DETECTION);
-  delay(10);
-  Serial.println("begin");
-
-  Servo_1.attach(servo1_pin);
-  Servo_2.attach(servo2_pin);
-  Servo_3.attach(servo3_pin);
-  servo3_angel = servo3_angel_max;
-
-  Servo_1.write(20);
-  Servo_2.write(50);
-  Servo_3.write(servo3_angel);
-  servo3_time = 0;
-
-  //strip9.begin();
-  //strip9.show();
+  //Serial.begin(9600);
+  servo1.attach(servo_pin);
+  servo1.write(servo_angle);
+  pinMode(arm_x_1, INPUT_PULLUP);
+  pinMode(arm_x_2, INPUT_PULLUP);
+  pinMode(arm_y_1, INPUT_PULLUP);
+  pinMode(arm_y_2, INPUT_PULLUP);
+  pinMode(arm_z_1, INPUT_PULLUP);
+  pinMode(arm_z_2, INPUT_PULLUP);
+  pinMode(IR_pin, INPUT);
+  arm_init();
 }
 
 void loop() {
-  if (millis() - servo3_time >= 3000) {
-    if (servo3_angel == servo3_angel_min) {
-      servo3_angel = servo3_angel_max;
-      Servo_3.write(servo3_angel);
-      servo3_time = millis();
-    }
-    else if (servo3_angel == servo3_angel_max) {
-      servo3_angel = servo3_angel_min;
-      Servo_3.write(servo3_angel);
-      servo3_time = millis();
-    }
+  while (analogRead(IR_pin) > 300)
+  {
+    /* code */
+    //Serial.println("in while");
   }
-  Serial.println("in loop");
-  if (ss.isDetected()) {
-    Serial.println("see someone");
-    if (ss.getFuncID() == Pixetto::FUNC_COLOR_DETECTION) {
-      Serial.println("color");
-      switch (ss.getTypeID())
-      {
-      case Pixetto::COLOR_RED:
-        Serial.println("red");
-        if (run_finish) {
-          color_id = Pixetto::COLOR_RED;
-          run_finish = 0;
-        }
-        break;
+  delay(5000);
+  servo1.write(servo_catch_ball_angle);
+  delay(1000);
+  raise_arm();
+  delay(1000);
+  arm_init();
 
-      case Pixetto::COLOR_YELLOW:
-        Serial.println("yellow");
-        if (run_finish) {
-          color_id = Pixetto::COLOR_YELLOW;
-          run_finish = 0;
-        }
-        break;
+}
 
-      case Pixetto::COLOR_BLUE:
-        Serial.println("blue");
-        if (run_finish) {
-          color_id = Pixetto::COLOR_BLUE;
-          run_finish = 0;
-        }
-        break;
-
-      case Pixetto::COLOR_GREEN:
-        Serial.println("green");
-        if (run_finish) {
-          color_id = Pixetto::COLOR_GREEN;
-          run_finish = 0;
-        }
-        break;
-
-      default:
-        break;
-      }
-    }
+void arm_init() {
+  motor1.drive(motor_speed); // motor1 up
+  motor0.drive(-(motor_speed - 50));  //motor0 left
+  while (arm_x_1_state | arm_y_2_state)
+  {
+    read_digitale_pin_state();
+    if (arm_x_1_state == LOW)  motor0.brake();
+    if (arm_y_2_state == LOW)  motor1.brake();
   }
 
-  if (run_finish == 0) {
-    switch (color_id)
-    {
-    case Pixetto::COLOR_RED:
-      //Serial.println("to red");
-      //colorled(1, "#ff0000");
-      //colorled(2, "#ff0000");
-      //colorled(3, "#ff0000");
-      Servo_1.write(red_angel);
-      color_id = 0;
-      break;
+  motor2.drive(-(motor_speed - 30)); //motor2 up
+  while (arm_z_2_state)
+  {
+    read_digitale_pin_state();
+    if (arm_z_2_state == LOW) motor2.brake();
+  }
 
-    case Pixetto::COLOR_BLUE:
-      //Serial.println("to blue");
-      //colorled(1, "#3366ff");
-      //colorled(2, "#3366ff");
-      //colorled(3, "#3366ff");
-      Servo_1.write(blue_angel);
-      color_id = 0;
-      break;
+  motor1.drive(-motor_speed); // motor1 down
+  while (arm_y_1_state)
+  {
+    read_digitale_pin_state();
+    if (arm_y_1_state == LOW) motor1.brake();
+  }
 
-    case Pixetto::COLOR_GREEN:
-      //Serial.println("green");
-      //colorled(1, "#33ff33");
-      //colorled(2, "#33ff33");
-      //colorled(3, "#33ff33");
-      Servo_1.write(green_angel);
-      color_id = 0;
-      break;
-
-    case Pixetto::COLOR_YELLOW:
-      //Serial.println("yellow");
-      //colorled(1, "#ffff00");
-      //colorled(2, "#ffff00");
-      //colorled(3, "#ffff00");
-      Servo_1.write(yellow_angel);
-      color_id = 0;
-      break;
-
-    default:
-      switch (door_state) {
-      case 1:
-        //Serial.println("open door");
-        time = millis();
-        Servo_2.write(50);
-        door_state = 2;
-        break;
-      case 2:
-        if (millis() - time >= 1500) {
-          //Serial.println("close door");
-          Servo_2.write(150);
-          time = millis();
-          door_state = 3;
-        }
-      default:
-        if (millis() - time >= 2500) {
-          door_state = 1;
-          run_finish = 1;
-        }
-        break;
-      }
-    }
+  motor2.drive(motor_speed - 60); //motor2 down
+  while (arm_z_1_state)
+  {
+    read_digitale_pin_state();
+    if (arm_z_1_state == LOW) motor2.brake();
   }
 }
 
-/*void colorled(int number, String c)
-{
-  long rgb_number = strtol(&c[1], NULL, 16);
-  int r = rgb_number >> 16;
-  int g = rgb_number >> 8 & 0xFF;
-  int b = rgb_number & 0xFF;
-  if (number <= 0) number = 0;
-  else  number--;
-  strip9.setPixelColor(number, strip9.Color(r, g, b));
-  strip9.show();
-}*/
+void raise_arm() {
+  motor2.drive(-(motor_speed - 50)); //motor2 up
+  long time = millis();
+  while (millis() - time < 200) {
+  }
+  motor2.brake();
+
+  motor1.drive(motor_speed); // motor1 up
+  time = millis();
+  while (millis() - time < 700) {
+  }
+  motor1.brake();
+
+  motor1.drive(motor_speed); // motor1 up
+  motor2.drive(motor_speed - 80); // motor2 down
+  time = millis();
+  while (arm_y_2_state)
+  {
+    read_digitale_pin_state();
+    if (arm_y_2_state == LOW) motor1.brake();
+    if (millis() - time >= 2000) motor2.brake();
+  }
+
+  motor2.drive(-(motor_speed - 50)); // motor2 down
+  while (arm_z_2_state) {
+    read_digitale_pin_state();
+    if (arm_z_2_state == LOW) motor2.brake();
+  }
+
+  motor0.drive(motor_speed - 50);  //motor0 right
+  while (arm_x_2_state)
+  {
+    read_digitale_pin_state();
+    if (arm_x_2_state == LOW) {
+      motor0.brake();
+      servo1.write(90);
+    }
+  }
+
+
+}
+
+void read_digitale_pin_state() {
+  arm_x_1_state = digitalRead(arm_x_1);
+  arm_x_2_state = digitalRead(arm_x_2);
+  arm_y_1_state = digitalRead(arm_y_1);
+  arm_y_2_state = digitalRead(arm_y_2);
+  arm_z_1_state = digitalRead(arm_z_1);
+  arm_z_2_state = digitalRead(arm_z_2);
+}
