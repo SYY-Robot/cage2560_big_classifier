@@ -2,16 +2,35 @@
 #include <HUSKYLENS.h>
 #include "Servo.h"
 #include <Wire.h>
+#include <SparkFun_TB6612.h>
+
 
 #define DEBUG 0
 
+#define BALL_MAX_AREA 20000
+#define MOTOR_SPEED 60
+
+#define ANGLE_RED 20
+#define ANGLE_BLUE 70
+#define ANGLE_YELLOW 120
+#define ANGLE_GREEN 170
+
+#define SERVO3_ANGLE_MAX 110
+#define SERVO3_ANGLE_MIN 60
+
+const unsigned short SERVO_PIN[3] = { 2,3,6 };
+
 HUSKYLENS huskylens;
+
+Motor motor1 = Motor(35, 36, 11, 1, -1);
+
 Servo Servo_1;  // 下方分料用舵機
-Servo Servo_2;  // 中間檔球用舵機
+//Servo Servo_2;  // 中間檔球用舵機
 Servo Servo_3;  // 上方理球用舵機
 
 enum ColorID {
-  COLOR_RED = 1,
+  COLOR_INIT = 0,
+  COLOR_RED,
   COLOR_YELLOW,
   COLOR_BLUE,
   COLOR_GREEN
@@ -23,23 +42,11 @@ enum DoorState {
   WAITING
 };
 
-const unsigned short SERVO_PIN[3] = { 2,3,6 };
-
-
-const unsigned short ANGLE_RED = 20;
-const unsigned short ANGLE_BLUE = 70;
-const unsigned short ANGLE_YELLOW = 120;
-const unsigned short ANGLE_GREEN = 170;
-
-const unsigned short SERVO3_ANGLE_MAX = 110;
-const unsigned short SERVO3_ANGLE_MIN = 60;
-
-short colorID = 0;
+short colorID = COLOR_INIT;
 short doorState = DoorState::OPEN_DOOR;//50 -> 180
 bool runFinished = true;
 long currentTime, servo3Time;
 short servo3Angel;
-
 
 void handleHUSKYLENSResults();
 void handleColorDetection();
@@ -47,6 +54,7 @@ void handleDoorControl();
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("Basic Encoder Test:");
   Wire.begin();
 
   while (!huskylens.begin(Wire))
@@ -59,17 +67,21 @@ void setup() {
 #if DEBUG
   Serial.println("begin");
 #endif
+  motor1.drive(60);
 
   Servo_1.attach(SERVO_PIN[0]);
-  Servo_2.attach(SERVO_PIN[1]);
+  //Servo_2.attach(SERVO_PIN[1]);
   Servo_3.attach(SERVO_PIN[2]);
   servo3Angel = SERVO3_ANGLE_MAX;
 
   Servo_1.write(ANGLE_RED);
-  Servo_2.write(50);
+  //Servo_2.write(50);
   Servo_3.write(servo3Angel);
   servo3Time = 0;
+
+  handleDoorControl();
 }
+
 
 void loop() {
   if (millis() - servo3Time >= 3000) {
@@ -93,17 +105,15 @@ void loop() {
   else if (!huskylens.available()) Serial.println(F("Object disappeared!"));
   else {
     handleHUSKYLENSResults();
+    if(!runFinished) handleColorDetection();
   }
-  if(!runFinished){
-    handleColorDetection();
-  }
+
 }
 
 void handleHUSKYLENSResults() {
 #if DEBUG
   Serial.println("see someone");
 #endif
-
   int MaxArea = 0;  // 紀錄最大面積數值
   short MaxAreaColorid = 0;  // 紀錄最大面積物體的ID
 
@@ -124,11 +134,14 @@ void handleHUSKYLENSResults() {
 #endif
 
   //  設置目標顏色ID
-  if (runFinished) {
+  if (MaxArea >= BALL_MAX_AREA) {
     colorID = MaxAreaColorid;
     runFinished = false;
   }
 }
+
+
+
 void handleColorDetection() {
   switch (colorID)
   {
@@ -137,7 +150,7 @@ void handleColorDetection() {
     Serial.println("red");
 #endif
     Servo_1.write(ANGLE_RED);
-    colorID = 0;
+    colorID = COLOR_INIT;
     break;
 
   case ColorID::COLOR_YELLOW:
@@ -145,7 +158,7 @@ void handleColorDetection() {
     Serial.println("yellow");
 #endif
     Servo_1.write(ANGLE_YELLOW);
-    colorID = 0;
+    colorID = COLOR_INIT;
     break;
 
   case ColorID::COLOR_BLUE:
@@ -153,7 +166,7 @@ void handleColorDetection() {
     Serial.println("blue");
 #endif
     Servo_1.write(ANGLE_BLUE);
-    colorID = 0;
+    colorID = COLOR_INIT;
     break;
 
   case ColorID::COLOR_GREEN:
@@ -161,14 +174,10 @@ void handleColorDetection() {
     Serial.println("green");
 #endif
     Servo_1.write(ANGLE_GREEN);
-    colorID = 0;
-    break;
-
-
-  default:
-    handleDoorControl();
+    colorID = COLOR_INIT;
     break;
   }
+  runFinished = true;
 }
 
 void handleDoorControl() {
@@ -177,28 +186,22 @@ void handleDoorControl() {
   case DoorState::OPEN_DOOR:
 #if DEBUG
     Serial.println("open door");
+    Serial.println(doorState);
+    Serial.println(runFinished);
 #endif
     currentTime = millis();
-    Servo_2.write(180);
-    doorState = CLOSE_DOOR;
+    motor1.drive(MOTOR_SPEED);
+    doorState = DoorState::CLOSE_DOOR;
     break;
 
   case DoorState::CLOSE_DOOR:
-    if (millis() - currentTime >= 1500) {
 #if DEBUG
-      Serial.println("close door");
+    Serial.println("close door");
+    Serial.println(doorState);
+    Serial.println(runFinished);
 #endif
-      Servo_2.write(50);
-      currentTime = millis();
-      doorState = DoorState::WAITING;
-    }
-    break;
-
-  case DoorState::WAITING:
-    if (millis() - currentTime >= 2500) {
-      doorState = DoorState::OPEN_DOOR;
-      runFinished = true;
-    }
+    motor1.brake();
+    doorState = DoorState::OPEN_DOOR;
     break;
   }
 }
